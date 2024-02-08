@@ -32,7 +32,13 @@ def kb_exists(session, kb_name):
 
 @with_session
 def load_kb_from_db(session, kb_name):
+    print("----------------------------------")
+    print(session.query(KnowledgeBaseModel))
+    print(session.query(KnowledgeBaseModel).filter_by(kb_name=kb_name).first())
+    print(kb_name)
     kb = session.query(KnowledgeBaseModel).filter(KnowledgeBaseModel.kb_name.ilike(kb_name)).first()
+    print(kb)
+    print("---------------end-------------------")
     if kb:
         kb_name, vs_type, embed_model = kb.kb_name, kb.vs_type, kb.embed_model
     else:

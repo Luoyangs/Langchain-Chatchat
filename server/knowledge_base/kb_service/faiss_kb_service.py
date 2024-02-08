@@ -1,13 +1,15 @@
 import os
 import shutil
+from typing import List, Dict, Tuple
+
+import numpy as np
+from langchain.docstore.document import Document
 
 from configs import SCORE_THRESHOLD
-from server.knowledge_base.kb_service.base import KBService, SupportedVSType, EmbeddingsFunAdapter
 from server.knowledge_base.kb_cache.faiss_cache import kb_faiss_pool, ThreadSafeFaiss
+from server.knowledge_base.kb_service.base import KBService, SupportedVSType, EmbeddingsFunAdapter
 from server.knowledge_base.utils import KnowledgeFile, get_kb_path, get_vs_path
 from server.utils import torch_gc
-from langchain.docstore.document import Document
-from typing import List, Dict, Optional, Tuple
 
 
 class FaissKBService(KBService):
@@ -66,7 +68,51 @@ class FaissKBService(KBService):
         embeddings = embed_func.embed_query(query)
         with self.load_vector_store().acquire() as vs:
             docs = vs.similarity_search_with_score_by_vector(embeddings, k=top_k, score_threshold=score_threshold)
-        return docs
+            doc_lens = len(docs)
+            if doc_lens == 0:
+                return docs
+
+            results = []
+            embedding = vs.embedding_function.embed_query(query)
+            vector = np.array([embedding], dtype=np.float32)
+            scores, indices = vs.index.search(vector, doc_lens)
+            kb_files = set([d.metadata.get("source") for d, s in docs])
+            name_map_id = dict()
+            for i, doc in vs.docstore._dict.items():
+                name = doc.metadata.get("source")
+                if name in kb_files:
+                    if name not in name_map_id:
+                        name_map_id[name] = [i]
+                    else:
+                        name_map_id[name].append(i)
+            # 保存最终的文档id, 这是个不重复的数组
+            doc_ids = []
+            doc_scores = []
+            for j, i in enumerate(indices[0]):
+                _id = vs.index_to_docstore_id[i]
+                res_score = docs[j][1]
+                if _id not in doc_ids:
+                    doc_ids.append(_id)
+                    doc_scores.append(res_score)
+
+                doc = vs.docstore.search(_id)
+                doc_source_name = doc.metadata.get("source")
+                if doc_source_name in name_map_id:
+                    id_list = name_map_id[doc_source_name]
+                    id_index = id_list.index(_id)
+                    id_len = 5 - j * 2  # 按照5:3:1的数量来扩充context
+                    if id_len <= 0:
+                        break
+                    id_ava = id_list[id_index + 1:id_index + 1 + id_len]
+                    for k, aid in enumerate(id_ava):
+                        if aid not in doc_ids:
+                            doc_ids.append(aid)
+                            doc_scores.append(res_score)
+
+            for index, doc_id in enumerate(doc_ids):
+                res_doc = vs.docstore.search(doc_id)
+                results.append((Document(page_content=res_doc.page_content, metadata=res_doc.metadata), doc_scores[index]))
+        return results
 
     def do_add_doc(self,
                    docs: List[Document],
@@ -116,8 +162,12 @@ class FaissKBService(KBService):
 
 
 if __name__ == '__main__':
+    # faissService = FaissKBService("1951932460")
+    # faissService.add_doc(KnowledgeFile("README.md", "test"))
+    # faissService.delete_doc(KnowledgeFile("README.md", "test"))
+    # faissService.do_drop_kb()
+    # print(faissService.search_docs("内部事件定义"))
+
     faissService = FaissKBService("test")
     faissService.add_doc(KnowledgeFile("README.md", "test"))
-    faissService.delete_doc(KnowledgeFile("README.md", "test"))
-    faissService.do_drop_kb()
-    print(faissService.search_docs("如何启动api服务"))
+    print(faissService.search_docs("Langchain"))

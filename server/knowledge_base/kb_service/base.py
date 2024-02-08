@@ -161,7 +161,7 @@ class KBService(ABC):
         """
         if os.path.exists(kb_file.filepath):
             self.delete_doc(kb_file, **kwargs)
-            return self.add_doc(kb_file, docs=docs, **kwargs)
+        return self.add_doc(kb_file, docs=docs, **kwargs)
 
     def exist_doc(self, file_name: str):
         return file_exists_in_db(KnowledgeFile(knowledge_base_name=self.kb_name,
@@ -299,8 +299,15 @@ class KBServiceFactory:
                     vector_store_type: Union[str, SupportedVSType],
                     embed_model: str = EMBEDDING_MODEL,
                     ) -> KBService:
+        print("*******************************")
+        print(kb_name)
+        print(vector_store_type)
         if isinstance(vector_store_type, str):
             vector_store_type = getattr(SupportedVSType, vector_store_type.upper())
+        print(vector_store_type)
+        print(isinstance(vector_store_type, str))
+        print(SupportedVSType.FAISS == vector_store_type)
+        print("***********end********************")
         if SupportedVSType.FAISS == vector_store_type:
             from server.knowledge_base.kb_service.faiss_kb_service import FaissKBService
             return FaissKBService(kb_name, embed_model=embed_model)
@@ -313,9 +320,6 @@ class KBServiceFactory:
         elif SupportedVSType.ZILLIZ == vector_store_type:
             from server.knowledge_base.kb_service.zilliz_kb_service import ZillizKBService
             return ZillizKBService(kb_name, embed_model=embed_model)
-        elif SupportedVSType.DEFAULT == vector_store_type:
-            return MilvusKBService(kb_name,
-                                   embed_model=embed_model)  # other milvus parameters are set in model_config.kbs_config
         elif SupportedVSType.ES == vector_store_type:
             from server.knowledge_base.kb_service.es_kb_service import ESKBService
             return ESKBService(kb_name, embed_model=embed_model)
@@ -326,6 +330,9 @@ class KBServiceFactory:
     @staticmethod
     def get_service_by_name(kb_name: str) -> KBService:
         _, vs_type, embed_model = load_kb_from_db(kb_name)
+        print(vs_type)
+        print(embed_model)
+        print(_)
         if _ is None:  # kb not in db, just return None
             return None
         return KBServiceFactory.get_service(kb_name, vs_type, embed_model)

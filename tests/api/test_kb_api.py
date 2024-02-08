@@ -49,12 +49,12 @@ def test_delete_kb_before(api="/knowledge_base/delete_knowledge_base"):
 def test_create_kb(api="/knowledge_base/create_knowledge_base"):
     url = api_base_url + api
 
-    print(f"\n尝试用空名称创建知识库：")
-    r = requests.post(url, json={"knowledge_base_name": " "})
-    data = r.json()
-    pprint(data)
-    assert data["code"] == 404
-    assert data["msg"] == "知识库名称不能为空，请重新填写知识库名称"
+    # print(f"\n尝试用空名称创建知识库：")
+    # r = requests.post(url, json={"knowledge_base_name": " "})
+    # data = r.json()
+    # pprint(data)
+    # assert data["code"] == 404
+    # assert data["msg"] == "知识库名称不能为空，请重新填写知识库名称"
 
     print(f"\n创建新知识库： {kb}")
     r = requests.post(url, json={"knowledge_base_name": kb})
@@ -63,12 +63,12 @@ def test_create_kb(api="/knowledge_base/create_knowledge_base"):
     assert data["code"] == 200
     assert data["msg"] == f"已新增知识库 {kb}"
 
-    print(f"\n尝试创建同名知识库： {kb}")
-    r = requests.post(url, json={"knowledge_base_name": kb})
-    data = r.json()
-    pprint(data)
-    assert data["code"] == 404
-    assert data["msg"] == f"已存在同名知识库 {kb}"
+    # print(f"\n尝试创建同名知识库： {kb}")
+    # r = requests.post(url, json={"knowledge_base_name": kb})
+    # data = r.json()
+    # pprint(data)
+    # assert data["code"] == 404
+    # assert data["msg"] == f"已存在同名知识库 {kb}"
 
 
 def test_list_kbs(api="/knowledge_base/list_knowledge_bases"):

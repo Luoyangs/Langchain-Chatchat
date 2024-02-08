@@ -1,3 +1,4 @@
+import datetime
 import os
 from configs import (
     KB_ROOT_PATH,
@@ -9,6 +10,7 @@ from configs import (
     text_splitter_dict,
     LLM_MODELS,
     TEXT_SPLITTER_NAME,
+    MINIO_BUCKET_NAME
 )
 import importlib
 from text_splitter import zh_title_enhance as func_zh_title_enhance
@@ -16,7 +18,7 @@ import langchain.document_loaders
 from langchain.docstore.document import Document
 from langchain.text_splitter import TextSplitter
 from pathlib import Path
-from server.utils import run_in_thread_pool, get_model_worker_config
+from server.utils import run_in_thread_pool, get_model_worker_config, get_minio_client
 import json
 from typing import List, Union,Dict, Tuple, Generator
 import chardet
@@ -274,6 +276,7 @@ class KnowledgeFile:
             filename: str,
             knowledge_base_name: str,
             loader_kwargs: Dict = {},
+            from_minio: bool = False
     ):
         '''
         对应知识库目录中的文件，必须是磁盘上存在的才能进行向量化等操作。
@@ -281,23 +284,47 @@ class KnowledgeFile:
         self.kb_name = knowledge_base_name
         self.filename = str(Path(filename).as_posix())
         self.ext = os.path.splitext(filename)[-1].lower()
+        self.pure_name = os.path.splitext(filename)[0].lower()
         if self.ext not in SUPPORTED_EXTS:
             raise ValueError(f"暂未支持的文件格式 {self.filename}")
         self.loader_kwargs = loader_kwargs
         self.filepath = get_file_path(knowledge_base_name, filename)
         self.docs = None
         self.splited_docs = None
+        self.from_minio = from_minio
         self.document_loader_name = get_LoaderClass(self.ext)
         self.text_splitter_name = TEXT_SPLITTER_NAME
 
     def file2docs(self, refresh: bool = False):
         if self.docs is None or refresh:
-            logger.info(f"{self.document_loader_name} used for {self.filepath}")
-            loader = get_loader(loader_name=self.document_loader_name,
-                                file_path=self.filepath,
-                                loader_kwargs=self.loader_kwargs)
-            self.docs = loader.load()
+            if self.from_minio:
+                self.docs = self.get_docs_from_pdf()
+            else:
+                loader = get_loader(loader_name=self.document_loader_name,
+                                    file_path=self.filepath,
+                                    loader_kwargs=self.loader_kwargs)
+                self.docs = loader.load()
         return self.docs
+    
+    def get_docs_from_pdf(self):
+        minio_client = get_minio_client()
+        obj = minio_client.get_object(MINIO_BUCKET_NAME, self.filename)
+        pdf_bytes = obj.read()
+        import fitz
+        docs = fitz.Document(stream=pdf_bytes, filetype='pdf')
+        # doc_name = docs.metadata.get("title")
+        doc_name = os.path.splitext(self.filename)[0]
+        if self.kb_name in doc_name:
+            doc_name = doc_name[len(self.kb_name) + 2:]
+        res: List[Document] = []
+        for i, doc in enumerate(docs):
+            item = Document(page_content=doc.get_text("text"), metadata={
+                "page": i + 1,
+                "name": doc_name,
+                "source": self.filename
+            })
+            res.append(item)
+        return res
 
     def docs2texts(
             self,
@@ -323,7 +350,6 @@ class KnowledgeFile:
         if not docs:
             return []
 
-        print(f"文档切分示例：{docs[0]}")
         if zh_title_enhance:
             docs = func_zh_title_enhance(docs)
         self.splited_docs = docs
@@ -351,10 +377,14 @@ class KnowledgeFile:
         return os.path.isfile(self.filepath)
 
     def get_mtime(self):
-        return os.path.getmtime(self.filepath)
+        if self.file_exist():
+            return os.path.getmtime(self.filepath)
+        return datetime.datetime.now().timestamp()
 
     def get_size(self):
-        return os.path.getsize(self.filepath)
+        if self.file_exist():
+            return os.path.getsize(self.filepath)
+        return 0
 
 
 def files2docs_in_thread(
@@ -362,6 +392,7 @@ def files2docs_in_thread(
         chunk_size: int = CHUNK_SIZE,
         chunk_overlap: int = OVERLAP_SIZE,
         zh_title_enhance: bool = ZH_TITLE_ENHANCE,
+        from_minio: bool = False
 ) -> Generator:
     '''
     利用多线程批量将磁盘文件转化成langchain Document.
@@ -385,12 +416,12 @@ def files2docs_in_thread(
             if isinstance(file, tuple) and len(file) >= 2:
                 filename = file[0]
                 kb_name = file[1]
-                file = KnowledgeFile(filename=filename, knowledge_base_name=kb_name)
+                file = KnowledgeFile(filename=filename, knowledge_base_name=kb_name, from_minio=from_minio)
             elif isinstance(file, dict):
                 filename = file.pop("filename")
                 kb_name = file.pop("kb_name")
                 kwargs.update(file)
-                file = KnowledgeFile(filename=filename, knowledge_base_name=kb_name)
+                file = KnowledgeFile(filename=filename, knowledge_base_name=kb_name, from_minio=from_minio)
             kwargs["file"] = file
             kwargs["chunk_size"] = chunk_size
             kwargs["chunk_overlap"] = chunk_overlap
@@ -406,9 +437,17 @@ def files2docs_in_thread(
 if __name__ == "__main__":
     from pprint import pprint
 
-    kb_file = KnowledgeFile(
-        filename="/home/congyin/Code/Project_Langchain_0814/Langchain-Chatchat/knowledge_base/csv1/content/gm.csv",
-        knowledge_base_name="samples")
-    # kb_file.text_splitter_name = "RecursiveCharacterTextSplitter"
-    docs = kb_file.file2docs()
+    # kb_file = KnowledgeFile(
+    #     filename="/home/congyin/Code/Project_Langchain_0814/Langchain-Chatchat/knowledge_base/csv1/content/gm.csv",
+    #     knowledge_base_name="samples")
+    # # kb_file.text_splitter_name = "RecursiveCharacterTextSplitter"
+    # docs = kb_file.file2docs()
     # pprint(docs[-1])
+
+    kb_name = "1236096830"
+    filename = "/1236096830/IT内部事件管理细则（试行）.pdf"
+    doc_name = os.path.splitext(filename)[0]
+    print(doc_name)
+    if kb_name in doc_name:
+        doc_name = doc_name[len(kb_name) + 2:]
+    print(doc_name)

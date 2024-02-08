@@ -1,5 +1,7 @@
+import os
+
 from fastapi import Body, Request
-from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from configs import (LLM_MODELS, 
                      VECTOR_SEARCH_TOP_K, 
@@ -8,7 +10,8 @@ from configs import (LLM_MODELS,
                      USE_RERANKER,
                      RERANKER_MODEL,
                      RERANKER_MAX_LENGTH,
-                     MODEL_PATH)
+                     MODEL_PATH,
+                     logger)
 from server.utils import wrap_done, get_ChatOpenAI
 from server.utils import BaseResponse, get_prompt_template
 from langchain.chains import LLMChain
@@ -119,15 +122,20 @@ async def knowledge_base_chat(query: str = Body(..., description="用户输入",
 
         source_documents = []
         for inum, doc in enumerate(docs):
-            filename = doc.metadata.get("source")
-            parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name": filename})
-            base_url = request.base_url
-            url = f"{base_url}knowledge_base/download_doc?" + parameters
-            text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
-            source_documents.append(text)
+            print(doc.metadata)
+            print(doc.metadata["source"])
+            # filename = doc.metadata.get("source")
+            # parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name": filename})
+            # base_url = request.base_url
+            # url = f"{base_url}knowledge_base/download_doc?" + parameters
+            # text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
+            # source_documents.append(text)
+            filename = os.path.split(doc.metadata["source"])[-1]
+            refer = {**doc.metadata, "content": doc.page_content, "name": filename, "score": round(doc.score, 3)}
+            source_documents.append(refer)
 
-        if len(source_documents) == 0:  # 没有找到相关文档
-            source_documents.append(f"<span style='color:red'>未找到相关文档,该回答为大模型自身能力解答！</span>")
+        # if len(source_documents) == 0:  # 没有找到相关文档
+        #   source_documents.append(f"<span style='color:red'>未找到相关文档,该回答为大模型自身能力解答！</span>")
 
         if stream:
             async for token in callback.aiter():
@@ -143,5 +151,5 @@ async def knowledge_base_chat(query: str = Body(..., description="用户输入",
                              ensure_ascii=False)
         await task
 
-    return EventSourceResponse(knowledge_base_chat_iterator(query, top_k, history,model_name,prompt_name))
+    return StreamingResponse(knowledge_base_chat_iterator(query, top_k, history,model_name,prompt_name))
 

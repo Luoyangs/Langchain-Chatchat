@@ -6,7 +6,8 @@ from pathlib import Path
 import asyncio
 from configs import (LLM_MODELS, LLM_DEVICE, EMBEDDING_DEVICE,
                      MODEL_PATH, MODEL_ROOT_PATH, ONLINE_LLM_MODEL, logger, log_verbose,
-                     FSCHAT_MODEL_WORKERS, HTTPX_DEFAULT_TIMEOUT)
+                     FSCHAT_MODEL_WORKERS, HTTPX_DEFAULT_TIMEOUT, MINIO_ADMIN_ACCOUNT, MINIO_ADMIN_ENDPOINT,
+                     MINIO_ADMIN_PASSWORD)
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from langchain.chat_models import ChatOpenAI
@@ -25,7 +26,7 @@ from typing import (
     Tuple
 )
 import logging
-import torch
+from minio import Minio
 
 from server.minx_chat_openai import MinxChatOpenAI
 
@@ -683,3 +684,11 @@ def get_temp_dir(id: str = None) -> Tuple[str, str]:
 
     path = tempfile.mkdtemp(dir=BASE_TEMP_DIR)
     return path, os.path.basename(path)
+
+def get_minio_client():
+    return Minio(
+        endpoint=MINIO_ADMIN_ENDPOINT,
+        access_key=MINIO_ADMIN_ACCOUNT,
+        secret_key=MINIO_ADMIN_PASSWORD,
+        secure=False
+    )

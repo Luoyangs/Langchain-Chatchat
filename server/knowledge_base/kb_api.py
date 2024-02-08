@@ -63,3 +63,11 @@ def delete_kb(
         return BaseResponse(code=500, msg=msg)
 
     return BaseResponse(code=500, msg=f"删除知识库失败 {knowledge_base_name}")
+
+if __name__ == '__main__':
+    res1 = list_kbs()
+    print(res1)
+    res2 = create_kb(knowledge_base_name="1951932460")
+    print(res2)
+    res1 = list_kbs()
+    print(res1)

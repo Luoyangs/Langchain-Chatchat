@@ -3,7 +3,7 @@ import asyncio
 
 from fastapi import Body
 from sse_starlette.sse import EventSourceResponse
-from configs import LLM_MODELS, TEMPERATURE, HISTORY_LEN, Agent_MODEL
+from configs import LLM_MODELS, TEMPERATURE, HISTORY_LEN, Agent_MODEL, logger
 
 from langchain.chains import LLMChain
 from langchain.memory import ConversationBufferWindowMemory
@@ -70,6 +70,8 @@ async def agent_chat(query: str = Body(..., description="用户输入", examples
             model_container.MODEL = model
 
         prompt_template = get_prompt_template("agent_chat", prompt_name)
+        logger.warn(prompt_name)
+        logger.warn(prompt_template)
         prompt_template_agent = CustomPromptTemplate(
             template=prompt_template,
             tools=tools,
